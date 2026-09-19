@@ -17,3 +17,9 @@ Abre http://127.0.0.1:8000/
 4. La app divide en partes iguales y te muestra los pagos mínimos para quedar a mano.
 
 Opcional: `python manage.py createsuperuser` para usar /admin/.
+
+## Despliegue en Render
+- App Django: https://cuentas-claras-1.onrender.com/
+- Vista que consume el microservicio: https://cuentas-claras-1.onrender.com/sugerencias/
+- Microservicio (FastAPI + MongoDB Atlas): https://cuentas-claras-2iy4.onrender.com/sugerencias
+- Nota: Render gratis duerme los servicios tras un rato sin uso, la primera visita puede tardar hasta un minuto.
