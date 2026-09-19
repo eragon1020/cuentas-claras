@@ -1,0 +1,19 @@
+{% extends 'gastos/base.html' %}
+{% load humanize %}
+{% block titulo %}Sugerencias · Cuentas Claras{% endblock %}
+{% block contenido %}
+<h2>💡 Gastos frecuentes</h2>
+<p class="muted">Datos traídos desde nuestro microservicio (MongoDB en la nube).</p>
+{% if error %}
+  <section><p class="neg">{{ error }}</p></section>
+{% else %}
+  <section>
+    <ul>
+      {% for s in sugerencias %}
+        <li><span>{{ s.emoji }} {{ s.nombre }}</span><span>≈ ${{ s.monto_sugerido|intcomma }}</span></li>
+      {% empty %}<li class="muted">Sin sugerencias.</li>{% endfor %}
+    </ul>
+  </section>
+{% endif %}
+<p><a href="{% url 'inicio' %}">← Volver</a></p>
+{% endblock %}
