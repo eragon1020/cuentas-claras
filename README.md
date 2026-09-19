@@ -1,7 +1,7 @@
 # 💸 Cuentas Claras
 
 
-antes de todo , toca levantar el microservicio , entrar a este link :
+antes de todo , toca levantar el microservicio , entrar a este link hasta que salga un archivo json en pantalla:
 
 https://cuentas-claras-2iy4.onrender.com/sugerencias
 
@@ -11,4 +11,4 @@ https://cuentas-claras-2iy4.onrender.com/sugerencias
 https://cuentas-claras-1.onrender.com/
 
 
-esto se hace por que render duerme los servicios por asi decirlo , entonces toca levantarlo antes.
+esto se hace por que render duerme los microservicios, entonces toca levantarlo antes.
