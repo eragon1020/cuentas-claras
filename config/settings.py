@@ -130,4 +130,19 @@ MAILERS = {
 
 # URL del microservicio de sugerencias (desplegado en Render/Railway).
 import os
-MICROSERVICIO_URL = os.getenv('MICROSERVICIO_URL', 'http://127.0.0.1:8001')
+MICROSERVICIO_URL = os.getenv('MICROSERVICIO_URL', 'https://cuentas-claras-2iy4.onrender.com')
+
+
+# ---- Configuración para producción (Render) ----
+SECRET_KEY = os.getenv('SECRET_KEY', SECRET_KEY)
+DEBUG = os.getenv('DEBUG', 'True') == 'True'
+
+_host = os.getenv('RENDER_EXTERNAL_HOSTNAME')
+ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+CSRF_TRUSTED_ORIGINS = []
+if _host:
+    ALLOWED_HOSTS.append(_host)
+    CSRF_TRUSTED_ORIGINS.append(f'https://{_host}')
+
+MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
+STATIC_ROOT = BASE_DIR / 'staticfiles'
