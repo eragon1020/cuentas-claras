@@ -37,3 +37,13 @@ class GastoForm(forms.ModelForm):
         if monto < 1:
             raise forms.ValidationError('El monto debe ser mayor a 0.')
         return monto
+
+
+class PreguntaForm(forms.Form):
+    pregunta = forms.CharField(
+        label='',
+        max_length=300,
+        widget=forms.TextInput(attrs={
+            'placeholder': 'Ej: ¿Cómo se dividen los gastos entre los miembros?',
+        }),
+    )

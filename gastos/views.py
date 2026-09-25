@@ -3,9 +3,25 @@ from django.conf import settings
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
-from .forms import GastoForm, GrupoForm, MiembroForm
+from .forms import GastoForm, GrupoForm, MiembroForm, PreguntaForm
 from .logic import calcular_pagos, calcular_saldos
 from .models import Gasto, Grupo
+
+# Contexto fijo que le da a la IA el "para qué" existe la app, para que
+# responda siempre enfocada en la problemática que resuelve Cuentas Claras.
+PROMPT_SISTEMA_ASISTENTE = (
+    'Eres el asistente de "Cuentas Claras", una app web para dividir y '
+    'controlar gastos compartidos entre grupos de personas (viajes, '
+    'arriendos, salidas, etc.). La app permite crear grupos, agregar '
+    'miembros, registrar gastos y calcular automáticamente cuánto le debe '
+    'cada persona a cada otra para saldar las cuentas de forma justa. '
+    'Responde SIEMPRE en español, de forma breve (máximo 4-5 líneas) y '
+    'enfocado en ayudar al usuario a entender o resolver problemas de '
+    'división de gastos compartidos, saldos entre personas, o el uso de '
+    'esta aplicación. Si te preguntan algo totalmente ajeno a ese tema, '
+    'redirige amablemente la conversación hacia la problemática de gastos '
+    'compartidos que resuelve la app.'
+)
 
 
 def inicio(request):
@@ -65,6 +81,55 @@ def sugerencias(request):
     except requests.RequestException:
         context['error'] = 'No se pudo conectar con el microservicio. Intenta de nuevo en un momento.'
     return render(request, 'gastos/sugerencias.html', context)
+
+
+def asistente(request):
+    """Consume una IA externa (API de Google Gemini) para responder preguntas
+    sobre la problemática que resuelve la app: dividir gastos compartidos."""
+    form = PreguntaForm(request.POST or None)
+    context = {'form': form, 'respuesta': None, 'error': None}
+
+    if request.method == 'POST' and form.is_valid():
+        pregunta = form.cleaned_data['pregunta']
+        if not settings.GEMINI_API_KEY:
+            context['error'] = (
+                'El asistente no está configurado (falta GEMINI_API_KEY).'
+            )
+        else:
+            try:
+                url = (
+                    'https://generativelanguage.googleapis.com/v1beta/models/'
+                    'gemini-2.5-flash:generateContent'
+                )
+                respuesta = requests.post(
+                    url,
+                    headers={
+                        'x-goog-api-key': settings.GEMINI_API_KEY,
+                        'content-type': 'application/json',
+                    },
+                    json={
+                        'system_instruction': {
+                            'parts': [{'text': PROMPT_SISTEMA_ASISTENTE}]
+                        },
+                        'contents': [
+                            {'role': 'user', 'parts': [{'text': pregunta}]}
+                        ],
+                    },
+                    timeout=30,
+                )
+                respuesta.raise_for_status()
+                datos = respuesta.json()
+                candidatos = datos.get('candidates', [])
+                texto = ''
+                if candidatos:
+                    partes = candidatos[0].get('content', {}).get('parts', [])
+                    texto = ''.join(p.get('text', '') for p in partes)
+                context['respuesta'] = texto or 'No obtuve una respuesta del asistente.'
+                context['pregunta'] = pregunta
+            except requests.RequestException:
+                context['error'] = 'No se pudo conectar con el asistente de IA. Intenta de nuevo.'
+
+    return render(request, 'gastos/asistente.html', context)
 
 
 @require_POST
