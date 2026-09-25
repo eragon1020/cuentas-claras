@@ -125,11 +125,10 @@ def asistente(request):
                     partes = candidatos[0].get('content', {}).get('parts', [])
                     texto = ''.join(p.get('text', '') for p in partes)
                 context['respuesta'] = texto or 'No obtuve una respuesta del asistente.'
-                context['pregunta'] = pregunta    
-                
+                context['pregunta'] = pregunta
             except requests.RequestException as exc:
-                   detalle = ''
-                  if exc.response is not None:
+                detalle = ''
+                if exc.response is not None:
                     detalle = f' [{exc.response.status_code}] {exc.response.text[:300]}'
                 print(f'ERROR al llamar a Gemini:{detalle} | {exc}')
                 context['error'] = 'No se pudo conectar con el asistente de IA. Intenta de nuevo.'
