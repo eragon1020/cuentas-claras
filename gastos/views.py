@@ -99,7 +99,7 @@ def asistente(request):
             try:
                 url = (
                     'https://generativelanguage.googleapis.com/v1beta/models/'
-                    'gemini-2.5-flash:generateContent'
+                    'gemini-3.8-flash:generateContent'
                 )
                 respuesta = requests.post(
                     url,
