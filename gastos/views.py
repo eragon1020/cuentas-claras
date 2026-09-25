@@ -2,6 +2,7 @@ import time
 
 import requests
 from django.conf import settings
+from django.core.cache import cache
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
@@ -24,6 +25,38 @@ PROMPT_SISTEMA_ASISTENTE = (
     'redirige amablemente la conversación hacia la problemática de gastos '
     'compartidos que resuelve la app.'
 )
+
+# Modelos que NO queremos elegir automáticamente aunque Groq los liste
+# (no son de chat: son de audio, moderación, guardrails, etc.).
+_PALABRAS_EXCLUIDAS = ('whisper', 'tts', 'guard', 'moderation', 'audio')
+
+
+def _elegir_modelo_groq():
+    """Le pregunta a Groq qué modelos de chat tiene disponibles AHORA MISMO
+    para esta API key, y elige uno. Se cachea 1 hora para no golpear la
+    API de listado en cada pregunta del usuario."""
+    modelo = cache.get('groq_modelo_elegido')
+    if modelo:
+        return modelo
+
+    respuesta = requests.get(
+        'https://api.groq.com/openai/v1/models',
+        headers={'Authorization': f'Bearer {settings.GROQ_API_KEY}'},
+        timeout=15,
+    )
+    respuesta.raise_for_status()
+    disponibles = [
+        m['id'] for m in respuesta.json().get('data', [])
+        if not any(palabra in m['id'].lower() for palabra in _PALABRAS_EXCLUIDAS)
+    ]
+    if not disponibles:
+        raise ValueError('Groq no devolvió ningún modelo de chat disponible.')
+
+    # Preferimos un modelo "versatile"/grande si existe; si no, el primero que haya.
+    preferidos = [m for m in disponibles if 'versatile' in m or '70b' in m]
+    modelo = (preferidos or disponibles)[0]
+    cache.set('groq_modelo_elegido', modelo, 60 * 60)
+    return modelo
 
 
 def inicio(request):
@@ -99,50 +132,71 @@ def asistente(request):
             )
         else:
             url = 'https://api.groq.com/openai/v1/chat/completions'
-            payload = {
-                'model': 'llama-3.3-70b-versatile',
-                'messages': [
-                    {'role': 'system', 'content': PROMPT_SISTEMA_ASISTENTE},
-                    {'role': 'user', 'content': pregunta},
-                ],
-                'max_tokens': 400,
-            }
-            intentos = 3
-            for intento in range(1, intentos + 1):
-                try:
-                    respuesta = requests.post(
-                        url,
-                        headers={
-                            'Authorization': f'Bearer {settings.GROQ_API_KEY}',
-                            'content-type': 'application/json',
-                        },
-                        json=payload,
-                        timeout=30,
-                    )
-                    respuesta.raise_for_status()
-                    datos = respuesta.json()
-                    opciones = datos.get('choices', [])
-                    texto = ''
-                    if opciones:
-                        texto = opciones[0].get('message', {}).get('content', '')
-                    context['respuesta'] = texto or 'No obtuve una respuesta del asistente.'
-                    context['pregunta'] = pregunta
-                    break
-                except requests.RequestException as exc:
-                    codigo = exc.response.status_code if exc.response is not None else None
-                    detalle = f' [{codigo}] {exc.response.text[:300]}' if exc.response is not None else ''
-                    print(f'ERROR al llamar a Groq (intento {intento}/{intentos}):{detalle} | {exc}')
-                    saturado = codigo in (429, 503)
-                    if saturado and intento < intentos:
-                        time.sleep(2 * intento)
-                        continue
-                    if saturado:
+            reintentos = 3
+            exito = False
+            ultimo_error_saturacion = False
+            try:
+                modelo = _elegir_modelo_groq()
+            except (requests.RequestException, ValueError) as exc:
+                print(f'ERROR eligiendo modelo de Groq: {exc}')
+                modelo = None
+
+            if modelo is None:
+                context['error'] = 'No se pudo consultar los modelos disponibles de Groq.'
+            else:
+                payload = {
+                    'model': modelo,
+                    'messages': [
+                        {'role': 'system', 'content': PROMPT_SISTEMA_ASISTENTE},
+                        {'role': 'user', 'content': pregunta},
+                    ],
+                    'max_tokens': 400,
+                }
+                for intento in range(1, reintentos + 1):
+                    try:
+                        respuesta = requests.post(
+                            url,
+                            headers={
+                                'Authorization': f'Bearer {settings.GROQ_API_KEY}',
+                                'content-type': 'application/json',
+                            },
+                            json=payload,
+                            timeout=30,
+                        )
+                        respuesta.raise_for_status()
+                        datos = respuesta.json()
+                        opciones = datos.get('choices', [])
+                        texto = ''
+                        if opciones:
+                            texto = opciones[0].get('message', {}).get('content', '')
+                        context['respuesta'] = texto or 'No obtuve una respuesta del asistente.'
+                        context['pregunta'] = pregunta
+                        exito = True
+                        break
+                    except requests.RequestException as exc:
+                        codigo = exc.response.status_code if exc.response is not None else None
+                        detalle = f' [{codigo}] {exc.response.text[:300]}' if exc.response is not None else ''
+                        print(f'ERROR al llamar a Groq con modelo "{modelo}" (intento {intento}):{detalle} | {exc}')
+                        if codigo == 404:
+                            # El modelo elegido dejó de existir justo ahora: invalidamos
+                            # la caché para que la próxima pregunta elija otro.
+                            cache.delete('groq_modelo_elegido')
+                            context['error'] = 'El modelo de IA cambió, intenta de nuevo.'
+                            break
+                        saturado = codigo in (429, 503)
+                        ultimo_error_saturacion = saturado
+                        if saturado and intento < reintentos:
+                            time.sleep(2 * intento)
+                            continue
+                        break
+
+                if not exito and not context['error']:
+                    if ultimo_error_saturacion:
                         context['error'] = (
                             'El modelo de IA está saturado en este momento. Intenta de nuevo en unos segundos.'
                         )
                     else:
                         context['error'] = 'No se pudo conectar con el asistente de IA. Intenta de nuevo.'
-                    break
 
     return render(request, 'gastos/asistente.html', context)
 
