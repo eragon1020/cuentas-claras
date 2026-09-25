@@ -125,8 +125,9 @@ def asistente(request):
                     partes = candidatos[0].get('content', {}).get('parts', [])
                     texto = ''.join(p.get('text', '') for p in partes)
                 context['respuesta'] = texto or 'No obtuve una respuesta del asistente.'
-                context['pregunta'] = pregunta       
-                except requests.RequestException as exc:
+                context['pregunta'] = pregunta    
+                
+            except requests.RequestException as exc:
                    detalle = ''
                   if exc.response is not None:
                     detalle = f' [{exc.response.status_code}] {exc.response.text[:300]}'
