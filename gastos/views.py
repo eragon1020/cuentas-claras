@@ -86,29 +86,26 @@ def sugerencias(request):
 
 
 def asistente(request):
-    """Consume una IA externa (API de Google Gemini) para responder preguntas
+    """Consume una IA externa (API de Groq) para responder preguntas
     sobre la problemática que resuelve la app: dividir gastos compartidos."""
     form = PreguntaForm(request.POST or None)
     context = {'form': form, 'respuesta': None, 'error': None}
 
     if request.method == 'POST' and form.is_valid():
         pregunta = form.cleaned_data['pregunta']
-        if not settings.GEMINI_API_KEY:
+        if not settings.GROQ_API_KEY:
             context['error'] = (
-                'El asistente no está configurado (falta GEMINI_API_KEY).'
+                'El asistente no está configurado (falta GROQ_API_KEY).'
             )
         else:
-            url = (
-                'https://generativelanguage.googleapis.com/v1beta/models/'
-                'gemini-flash-latest:generateContent'
-            )
+            url = 'https://api.groq.com/openai/v1/chat/completions'
             payload = {
-                'system_instruction': {
-                    'parts': [{'text': PROMPT_SISTEMA_ASISTENTE}]
-                },
-                'contents': [
-                    {'role': 'user', 'parts': [{'text': pregunta}]}
+                'model': 'llama-3.3-70b-versatile',
+                'messages': [
+                    {'role': 'system', 'content': PROMPT_SISTEMA_ASISTENTE},
+                    {'role': 'user', 'content': pregunta},
                 ],
+                'max_tokens': 400,
             }
             intentos = 3
             for intento in range(1, intentos + 1):
@@ -116,7 +113,7 @@ def asistente(request):
                     respuesta = requests.post(
                         url,
                         headers={
-                            'x-goog-api-key': settings.GEMINI_API_KEY,
+                            'Authorization': f'Bearer {settings.GROQ_API_KEY}',
                             'content-type': 'application/json',
                         },
                         json=payload,
@@ -124,18 +121,17 @@ def asistente(request):
                     )
                     respuesta.raise_for_status()
                     datos = respuesta.json()
-                    candidatos = datos.get('candidates', [])
+                    opciones = datos.get('choices', [])
                     texto = ''
-                    if candidatos:
-                        partes = candidatos[0].get('content', {}).get('parts', [])
-                        texto = ''.join(p.get('text', '') for p in partes)
+                    if opciones:
+                        texto = opciones[0].get('message', {}).get('content', '')
                     context['respuesta'] = texto or 'No obtuve una respuesta del asistente.'
                     context['pregunta'] = pregunta
                     break
                 except requests.RequestException as exc:
                     codigo = exc.response.status_code if exc.response is not None else None
                     detalle = f' [{codigo}] {exc.response.text[:300]}' if exc.response is not None else ''
-                    print(f'ERROR al llamar a Gemini (intento {intento}/{intentos}):{detalle} | {exc}')
+                    print(f'ERROR al llamar a Groq (intento {intento}/{intentos}):{detalle} | {exc}')
                     saturado = codigo in (429, 503)
                     if saturado and intento < intentos:
                         time.sleep(2 * intento)
