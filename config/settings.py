@@ -132,9 +132,9 @@ MAILERS = {
 import os
 MICROSERVICIO_URL = os.getenv('MICROSERVICIO_URL', 'https://cuentas-claras-2iy4.onrender.com')
 
-# Clave de la API de Google Gemini para el asistente de IA externo.
+# Clave de la API de Groq para el asistente de IA externo.
 # Configúrala como variable de entorno; NUNCA la escribas aquí directamente.
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
+GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
 
 
 # ---- Configuración para producción (Render) ----
