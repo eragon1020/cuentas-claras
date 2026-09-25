@@ -1,3 +1,5 @@
+import time
+
 import requests
 from django.conf import settings
 from django.shortcuts import get_object_or_404, redirect, render
@@ -96,42 +98,55 @@ def asistente(request):
                 'El asistente no está configurado (falta GEMINI_API_KEY).'
             )
         else:
-            try:
-                url = (
-                    'https://generativelanguage.googleapis.com/v1beta/models/'
-                    'gemini-3.8-flash:generateContent'
-                )
-                respuesta = requests.post(
-                    url,
-                    headers={
-                        'x-goog-api-key': settings.GEMINI_API_KEY,
-                        'content-type': 'application/json',
-                    },
-                    json={
-                        'system_instruction': {
-                            'parts': [{'text': PROMPT_SISTEMA_ASISTENTE}]
+            url = (
+                'https://generativelanguage.googleapis.com/v1beta/models/'
+                'gemini-flash-latest:generateContent'
+            )
+            payload = {
+                'system_instruction': {
+                    'parts': [{'text': PROMPT_SISTEMA_ASISTENTE}]
+                },
+                'contents': [
+                    {'role': 'user', 'parts': [{'text': pregunta}]}
+                ],
+            }
+            intentos = 3
+            for intento in range(1, intentos + 1):
+                try:
+                    respuesta = requests.post(
+                        url,
+                        headers={
+                            'x-goog-api-key': settings.GEMINI_API_KEY,
+                            'content-type': 'application/json',
                         },
-                        'contents': [
-                            {'role': 'user', 'parts': [{'text': pregunta}]}
-                        ],
-                    },
-                    timeout=30,
-                )
-                respuesta.raise_for_status()
-                datos = respuesta.json()
-                candidatos = datos.get('candidates', [])
-                texto = ''
-                if candidatos:
-                    partes = candidatos[0].get('content', {}).get('parts', [])
-                    texto = ''.join(p.get('text', '') for p in partes)
-                context['respuesta'] = texto or 'No obtuve una respuesta del asistente.'
-                context['pregunta'] = pregunta
-            except requests.RequestException as exc:
-                detalle = ''
-                if exc.response is not None:
-                    detalle = f' [{exc.response.status_code}] {exc.response.text[:300]}'
-                print(f'ERROR al llamar a Gemini:{detalle} | {exc}')
-                context['error'] = 'No se pudo conectar con el asistente de IA. Intenta de nuevo.'
+                        json=payload,
+                        timeout=30,
+                    )
+                    respuesta.raise_for_status()
+                    datos = respuesta.json()
+                    candidatos = datos.get('candidates', [])
+                    texto = ''
+                    if candidatos:
+                        partes = candidatos[0].get('content', {}).get('parts', [])
+                        texto = ''.join(p.get('text', '') for p in partes)
+                    context['respuesta'] = texto or 'No obtuve una respuesta del asistente.'
+                    context['pregunta'] = pregunta
+                    break
+                except requests.RequestException as exc:
+                    codigo = exc.response.status_code if exc.response is not None else None
+                    detalle = f' [{codigo}] {exc.response.text[:300]}' if exc.response is not None else ''
+                    print(f'ERROR al llamar a Gemini (intento {intento}/{intentos}):{detalle} | {exc}')
+                    saturado = codigo in (429, 503)
+                    if saturado and intento < intentos:
+                        time.sleep(2 * intento)
+                        continue
+                    if saturado:
+                        context['error'] = (
+                            'El modelo de IA está saturado en este momento. Intenta de nuevo en unos segundos.'
+                        )
+                    else:
+                        context['error'] = 'No se pudo conectar con el asistente de IA. Intenta de nuevo.'
+                    break
 
     return render(request, 'gastos/asistente.html', context)
 
