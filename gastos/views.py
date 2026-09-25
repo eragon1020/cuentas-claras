@@ -26,9 +26,13 @@ PROMPT_SISTEMA_ASISTENTE = (
     'compartidos que resuelve la app.'
 )
 
-# Modelos que NO queremos elegir automáticamente aunque Groq los liste
-# (no son de chat: son de audio, moderación, guardrails, etc.).
-_PALABRAS_EXCLUIDAS = ('whisper', 'tts', 'guard', 'moderation', 'audio')
+# Solo consideramos modelos de estas familias, que sabemos que son de
+# chat/texto. Es más seguro hacer una lista blanca que una lista negra:
+# Groq también sirve modelos de voz, audio o con permisos especiales
+# (ej. "canopylabs/orpheus-v1-english") que no sirven para esto.
+_FAMILIAS_CHAT_PERMITIDAS = (
+    'llama', 'gemma', 'mixtral', 'qwen', 'gpt-oss', 'kimi', 'compound', 'deepseek',
+)
 
 
 def _elegir_modelo_groq():
@@ -47,10 +51,10 @@ def _elegir_modelo_groq():
     respuesta.raise_for_status()
     disponibles = [
         m['id'] for m in respuesta.json().get('data', [])
-        if not any(palabra in m['id'].lower() for palabra in _PALABRAS_EXCLUIDAS)
+        if any(familia in m['id'].lower() for familia in _FAMILIAS_CHAT_PERMITIDAS)
     ]
     if not disponibles:
-        raise ValueError('Groq no devolvió ningún modelo de chat disponible.')
+        raise ValueError('Groq no devolvió ningún modelo de chat conocido disponible.')
 
     # Preferimos un modelo "versatile"/grande si existe; si no, el primero que haya.
     preferidos = [m for m in disponibles if 'versatile' in m or '70b' in m]
@@ -177,9 +181,10 @@ def asistente(request):
                         codigo = exc.response.status_code if exc.response is not None else None
                         detalle = f' [{codigo}] {exc.response.text[:300]}' if exc.response is not None else ''
                         print(f'ERROR al llamar a Groq con modelo "{modelo}" (intento {intento}):{detalle} | {exc}')
-                        if codigo == 404:
-                            # El modelo elegido dejó de existir justo ahora: invalidamos
-                            # la caché para que la próxima pregunta elija otro.
+                        if codigo in (400, 404):
+                            # El modelo elegido no sirve (dejó de existir, requiere
+                            # aceptar términos, etc.): invalidamos la caché para que
+                            # la próxima pregunta elija otro modelo distinto.
                             cache.delete('groq_modelo_elegido')
                             context['error'] = 'El modelo de IA cambió, intenta de nuevo.'
                             break
